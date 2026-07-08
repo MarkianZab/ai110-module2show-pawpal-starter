@@ -20,7 +20,7 @@ class Task:
 
     def mark_complete(self):
         """Mark this task as done."""
-        ...
+        self.completed = True
 
 
 @dataclass
@@ -32,7 +32,7 @@ class Pet:
 
     def add_task(self, task: Task):
         """Attach a task to this pet."""
-        ...
+        self.tasks.append(task)
 
 
 class Owner:
@@ -45,12 +45,14 @@ class Owner:
 
     def add_pet(self, pet: Pet):
         """Register a new pet under this owner."""
-        ...
+        self.pets.append(pet)
 
     def get_all_tasks(self) -> List[Task]:
         """Collect every task across all of this owner's pets."""
-        ...
-
+        all_tasks = []
+        for pet in self.pets:
+            all_tasks.extend(pet.tasks)
+        return all_tasks
 
 class Scheduler:
     """The 'brain': turns an owner's tasks + constraints into a daily plan."""
@@ -68,5 +70,10 @@ class Scheduler:
         ...
 
     def generate_plan(self, owner: Owner):
-        """Produce the ordered daily plan plus a short reasoning string."""
-        ...
+        """Produce the daily plan (list of tasks) plus a short reasoning string."""
+        tasks = owner.get_all_tasks()
+        reasoning = (
+            f"{len(tasks)} task(s) across {len(owner.pets)} pet(s). "
+            f"Priority sorting and time-budget filtering arrive in Phase 4."
+        )
+        return tasks, reasoning
