@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 
@@ -58,22 +59,74 @@ class Scheduler:
     """The 'brain': turns an owner's tasks + constraints into a daily plan."""
 
     def sort_by_priority(self, tasks: List[Task]) -> List[Task]:
-        """Return tasks ordered by priority first, then clock time."""
-        ...
+        """Order tasks by priority (high first), then by clock time."""
+        # Unknown priorities sort last (99); tasks with no time sort last ("99:99").
+        return sorted(
+            tasks,
+            key=lambda t: (PRIORITY_ORDER.get(t.priority, 99), t.time or "99:99"),
+        )
 
     def filter_by_time_budget(self, tasks: List[Task], budget: int) -> List[Task]:
-        """Keep tasks that fit within the available minutes; defer the rest."""
-        ...
+        """Greedily keep tasks (in priority order) until the minute budget runs out."""
+        kept, spent = [], 0
+        for task in self.sort_by_priority(tasks):
+            if spent + task.duration <= budget:
+                kept.append(task)
+                spent += task.duration
+        return kept
 
     def detect_conflicts(self, tasks: List[Task]) -> List[str]:
-        """Return warnings for tasks scheduled at the same clock time."""
-        ...
+        """Return a warning for each clock time used by more than one task."""
+        seen, warnings = {}, []
+        for task in tasks:
+            if task.time:
+                seen.setdefault(task.time, []).append(task.description)
+        for time, descs in seen.items():
+            if len(descs) > 1:
+                warnings.append(f"Conflict at {time}: {', '.join(descs)}")
+        return warnings
+
+    def advance_recurring(self, task: Task) -> Optional[Task]:
+        """When a daily/weekly task is completed, return its next occurrence."""
+        if task.frequency == "once":
+            return None
+        step = timedelta(days=1) if task.frequency == "daily" else timedelta(weeks=1)
+        next_time = task.time
+        if task.time and _is_datestamp(task.time):
+            next_time = (datetime.strptime(task.time, "%Y-%m-%d") + step).strftime("%Y-%m-%d")
+        return Task(
+            description=task.description,
+            duration=task.duration,
+            priority=task.priority,
+            category=task.category,
+            time=next_time,
+            completed=False,
+            frequency=task.frequency,
+        )
 
     def generate_plan(self, owner: Owner):
-        """Produce the daily plan (list of tasks) plus a short reasoning string."""
-        tasks = owner.get_all_tasks()
+        """Produce the sorted, budget-limited plan plus a reasoning string."""
+        all_tasks = owner.get_all_tasks()
+        planned = self.filter_by_time_budget(all_tasks, owner.time_available)
+        conflicts = self.detect_conflicts(planned)
+
+        used = sum(t.duration for t in planned)
+        deferred = len(all_tasks) - len(planned)
         reasoning = (
-            f"{len(tasks)} task(s) across {len(owner.pets)} pet(s). "
-            f"Priority sorting and time-budget filtering arrive in Phase 4."
+            f"Chose {len(planned)} of {len(all_tasks)} task(s), "
+            f"{used}/{owner.time_available} min used, "
+            f"sorted by priority then time"
         )
-        return tasks, reasoning
+        if deferred:
+            reasoning += f"; {deferred} deferred (over budget)"
+        if conflicts:
+            reasoning += f"; {len(conflicts)} time conflict(s)"
+        return planned, reasoning
+    
+def _is_datestamp(value: str) -> bool:
+    """True if a string looks like YYYY-MM-DD."""
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False

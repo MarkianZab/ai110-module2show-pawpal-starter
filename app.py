@@ -83,16 +83,29 @@ st.divider()
 # --- Build schedule -------------------------------------------------------
 st.subheader("Build Schedule")
 
+# Phase 6: surface the Scheduler's smart features in the UI.
 if st.button("Generate schedule"):
-    tasks, reasoning = scheduler.generate_plan(owner)
-    if tasks:
+    planned, reasoning = scheduler.generate_plan(owner)
+    conflicts = scheduler.detect_conflicts(owner.get_all_tasks())
+
+    if planned:
+        # Show any time conflicts as warnings the owner can act on.
+        for warning in conflicts:
+            st.warning(f"⚠️ {warning}")
+
         st.markdown(f"**Daily plan for {pet.name} ({pet.species})**")
-        for t in tasks:
-            mark = "✅" if t.completed else "⬜"
-            st.write(
-                f"{mark} {t.time or '--:--'} — {t.description} "
-                f"({t.duration} min) · priority: {t.priority}"
-            )
-        st.caption(reasoning)
+
+        # planned is already sorted by priority then time.
+        st.table([
+            {
+                "time": t.time or "--:--",
+                "task": t.description,
+                "duration": f"{t.duration} min",
+                "priority": t.priority,
+            }
+            for t in planned
+        ])
+
+        st.success(reasoning)
     else:
         st.info("Add at least one task first.")
